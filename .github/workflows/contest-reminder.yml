@@ -72,4 +72,4 @@ jobs:
           add: "posted.json"
           author_name: "github-actions[bot]"
           author_email: "github-actions[bot]@users.noreply.github.com"
-          token: ${{ secrets.PAT }}
+          github_token: ${{ secrets.PAT }}
