@@ -24,16 +24,11 @@ jobs:
 
       - name: Fetch contests and merge into one array
         run: |
-          # Start with empty temp file
           > temp.json
-
           for platform in atcoder codechef codeforces hackerearth hackerrank leetcode toph; do
             echo "Fetching $platform..."
-            curl -s "https://contest-hive.vercel.app/api/$platform" \
-              | jq '.data[]?' >> temp.json
+            curl -s "https://contest-hive.vercel.app/api/$platform" | jq '.data[]?' >> temp.json
           done
-
-          # Merge all contests into a single valid JSON array
           jq -s '[.[][]? | select(.startTime?)]' temp.json > new.json
           rm temp.json
 
@@ -75,3 +70,6 @@ jobs:
         with:
           message: "Update posted contests list"
           add: "posted.json"
+          author_name: "github-actions[bot]"
+          author_email: "github-actions[bot]@users.noreply.github.com"
+          token: ${{ secrets.PAT }}
