@@ -2,7 +2,7 @@ name: Contest Reminders to Discord
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # every 5 minutes
+    - cron: "*/2 * * * *" # every 5 minutes
   workflow_dispatch:
 
 jobs:
@@ -16,49 +16,41 @@ jobs:
       - name: Install jq
         run: sudo apt-get install jq -y
 
-      - name: Load previous posted contests
-        id: load
+      - name: Ensure posted.json exists
         run: |
-          if [ -f posted.json ]; then
-            cat posted.json
-          else
+          if [ ! -f posted.json ]; then
             echo "[]" > posted.json
           fi
 
       - name: Fetch contests
         run: |
-          # Empty file for new contests
           echo "[]" > new.json
-
-          # Platforms to check
           for platform in atcoder codechef codeforces hackerearth hackerrank leetcode toph; do
             echo "Fetching $platform..."
-            curl -s "https://contest-hive.vercel.app/api/$platform" | jq '.data[]' >> new.json
+            curl -s "https://contest-hive.vercel.app/api/$platform" | jq '.data[]?' >> new.json
           done
+          # Make sure new.json is valid even if APIs return empty
+          jq -s '.' new.json > new.json.tmp && mv new.json.tmp new.json
 
-      - name: Filter upcoming contests (within next 30 minutes)
-        id: filter
+      - name: Filter upcoming contests (next 30 min)
         run: |
           now=$(date -u +%s)
-          window=$((30 * 60)) # 30 minutes
+          window=$((30 * 60))
+          jq --argjson now "$now" --argjson window "$window" '[ .[]? | select((.startTime | fromdateiso8601) - $now < $window and (.startTime | fromdateiso8601) - $now > 0) ]' new.json > upcoming.json
 
-          jq --argjson now "$now" --argjson window "$window" '
-            [ .[] | select((.startTime | fromdateiso8601) - $now < $window and (.startTime | fromdateiso8601) - $now > 0) ]
-          ' new.json > upcoming.json
-
-      - name: Compare with posted contests and send new ones
+      - name: Send new contests to Discord
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          posted=$(cat posted.json | jq -r '.[].url')
-          to_post=$(jq -c '.[]' upcoming.json)
+          posted_urls=$(jq -r '.[].url?' posted.json)
+          upcoming=$(jq -c '.[]?' upcoming.json)
 
-          for contest in $to_post; do
+          for contest in $upcoming; do
             url=$(echo "$contest" | jq -r '.url')
-            if ! echo "$posted" | grep -q "$url"; then
+            if ! echo "$posted_urls" | grep -q "$url"; then
               title=$(echo "$contest" | jq -r '.title')
-              start=$(echo "$contest" | jq -r '.startTime')
               platform=$(echo "$contest" | jq -r '.platform')
+              start=$(echo "$contest" | jq -r '.startTime')
 
               message="⏰ **Upcoming $platform Contest!**
 **$title**
@@ -71,7 +63,7 @@ jobs:
                    -d "{\"content\": \"$message\"}" \
                    "$DISCORD_WEBHOOK"
 
-              # Append to posted.json
+              # Append to posted.json safely
               jq --arg url "$url" '. + [{"url": $url}]' posted.json > tmp.json && mv tmp.json posted.json
             fi
           done
