@@ -16,6 +16,14 @@ jobs:
       - name: Install jq
         run: sudo apt-get install jq -y
 
+      # Restore cached posted.json if exists
+      - name: Restore posted.json cache
+        uses: actions/cache@v3
+        with:
+          path: posted.json
+          key: posted-json-cache
+
+      # Ensure posted.json exists
       - name: Ensure posted.json exists
         run: |
           if [ ! -f posted.json ]; then
@@ -60,16 +68,14 @@ jobs:
                    -d "{\"content\": \"$message\"}" \
                    "$DISCORD_WEBHOOK"
 
-              # Append to posted.json safely
+              # Append to posted.json
               jq --arg url "$url" '. + [{"url": $url}]' posted.json > tmp.json && mv tmp.json posted.json
             fi
           done
 
-      - name: Commit updated posted.json
-        uses: EndBug/add-and-commit@v9
+      # Save posted.json to cache for next run
+      - name: Save posted.json cache
+        uses: actions/cache@v3
         with:
-          message: "Update posted contests list"
-          add: "posted.json"
-          author_name: "github-actions[bot]"
-          author_email: "github-actions[bot]@users.noreply.github.com"
-          github_token: ${{ secrets.PAT }}
+          path: posted.json
+          key: posted-json-cache
