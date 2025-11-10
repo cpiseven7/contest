@@ -1,0 +1,82 @@
+name: Contest Reminders to Discord
+
+on:
+  schedule:
+    - cron: "*/5 * * * *" # every 5 minutes
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install jq -y
+
+      - name: Load previous posted contests
+        id: load
+        run: |
+          if [ -f posted.json ]; then
+            cat posted.json
+          else
+            echo "[]" > posted.json
+          fi
+
+      - name: Fetch contests
+        run: |
+          # Empty file for new contests
+          echo "[]" > new.json
+
+          # Platforms to check
+          for platform in atcoder codechef codeforces hackerearth hackerrank leetcode toph; do
+            echo "Fetching $platform..."
+            curl -s "https://contest-hive.vercel.app/api/$platform" | jq '.data[]' >> new.json
+          done
+
+      - name: Filter upcoming contests (within next 30 minutes)
+        id: filter
+        run: |
+          now=$(date -u +%s)
+          window=$((30 * 60)) # 30 minutes
+
+          jq --argjson now "$now" --argjson window "$window" '
+            [ .[] | select((.startTime | fromdateiso8601) - $now < $window and (.startTime | fromdateiso8601) - $now > 0) ]
+          ' new.json > upcoming.json
+
+      - name: Compare with posted contests and send new ones
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          posted=$(cat posted.json | jq -r '.[].url')
+          to_post=$(jq -c '.[]' upcoming.json)
+
+          for contest in $to_post; do
+            url=$(echo "$contest" | jq -r '.url')
+            if ! echo "$posted" | grep -q "$url"; then
+              title=$(echo "$contest" | jq -r '.title')
+              start=$(echo "$contest" | jq -r '.startTime')
+              platform=$(echo "$contest" | jq -r '.platform')
+
+              message="⏰ **Upcoming $platform Contest!**
+**$title**
+🕒 Starts: $start
+🔗 $url"
+
+              echo "Posting $title..."
+              curl -H "Content-Type: application/json" \
+                   -X POST \
+                   -d "{\"content\": \"$message\"}" \
+                   "$DISCORD_WEBHOOK"
+
+              # Append to posted.json
+              jq --arg url "$url" '. + [{"url": $url}]' posted.json > tmp.json && mv tmp.json posted.json
+            fi
+          done
+
+      - name: Save updated posted.json
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: "Update posted contests list"
+          add: "posted.json"
