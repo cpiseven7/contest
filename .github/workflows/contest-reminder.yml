@@ -2,7 +2,7 @@ name: Contest Reminders to Discord
 
 on:
   schedule:
-    - cron: "*/2 * * * *" # every 5 minutes
+    - cron: "*/5 * * * *" # every 5 minutes
   workflow_dispatch:
 
 jobs:
@@ -29,13 +29,13 @@ jobs:
             echo "Fetching $platform..."
             curl -s "https://contest-hive.vercel.app/api/$platform" | jq '.data[]?' >> new.json
           done
-          # Make sure new.json is valid even if APIs return empty
+          # Make sure new.json is valid JSON even if all APIs are empty
           jq -s '.' new.json > new.json.tmp && mv new.json.tmp new.json
 
-      - name: Filter upcoming contests (next 30 min)
+      - name: Filter upcoming contests (next 10 minutes)
         run: |
           now=$(date -u +%s)
-          window=$((30 * 60))
+          window=$((10 * 60)) # 10 minutes
           jq --argjson now "$now" --argjson window "$window" '[ .[]? | select((.startTime | fromdateiso8601) - $now < $window and (.startTime | fromdateiso8601) - $now > 0) ]' new.json > upcoming.json
 
       - name: Send new contests to Discord
@@ -52,10 +52,7 @@ jobs:
               platform=$(echo "$contest" | jq -r '.platform')
               start=$(echo "$contest" | jq -r '.startTime')
 
-              message="⏰ **Upcoming $platform Contest!**
-**$title**
-🕒 Starts: $start
-🔗 $url"
+              message="⏰ **Upcoming $platform Contest!**\n**$title**\n🕒 Starts: $start\n🔗 $url"
 
               echo "Posting $title..."
               curl -H "Content-Type: application/json" \
@@ -68,7 +65,7 @@ jobs:
             fi
           done
 
-      - name: Save updated posted.json
+      - name: Commit updated posted.json
         uses: EndBug/add-and-commit@v9
         with:
           message: "Update posted contests list"
