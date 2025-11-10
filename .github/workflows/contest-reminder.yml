@@ -22,20 +22,25 @@ jobs:
             echo "[]" > posted.json
           fi
 
-      - name: Fetch contests
+      - name: Fetch contests and merge into one array
         run: |
-          echo "[]" > new.json
+          # Start with empty temp file
+          > temp.json
+
           for platform in atcoder codechef codeforces hackerearth hackerrank leetcode toph; do
             echo "Fetching $platform..."
-            curl -s "https://contest-hive.vercel.app/api/$platform" | jq '.data[]?' >> new.json
+            curl -s "https://contest-hive.vercel.app/api/$platform" \
+              | jq '.data[]?' >> temp.json
           done
-          # Make sure new.json is valid JSON even if all APIs are empty
-          jq -s '.' new.json > new.json.tmp && mv new.json.tmp new.json
+
+          # Merge all contests into a single valid JSON array
+          jq -s '[.[][]? | select(.startTime?)]' temp.json > new.json
+          rm temp.json
 
       - name: Filter upcoming contests (next 10 minutes)
         run: |
           now=$(date -u +%s)
-          window=$((10 * 60)) # 10 minutes
+          window=$((10 * 60)) # 10 minutes before start
           jq --argjson now "$now" --argjson window "$window" '[ .[]? | select((.startTime | fromdateiso8601) - $now < $window and (.startTime | fromdateiso8601) - $now > 0) ]' new.json > upcoming.json
 
       - name: Send new contests to Discord
