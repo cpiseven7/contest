@@ -8,8 +8,9 @@ on:
 jobs:
   remind:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Install jq
